@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <pthread.h>
 
+
 void* client_thread(void* arg)
 {
 	int clientfd = *(int*)arg;
@@ -76,11 +77,42 @@ int main( )
 		pthread_create(&thid,NULL,client_thread,&clientfd);
 	 }
 #else   //select
-    fd_set rdfs;
+    fd_set rdfs,rset;
     FD_ZERO(&rdfs);
-     select(maxfd,rset,wset,eset,timeout);
+	FD_SET(sockfd,&rdfs);
+	int maxfd = sockfd;
+	while(1)
+	{
+		rset = rdfs;
+     	int nready = select(maxfd+1,&rset,NULL,NULL,NULL);
+		if(FD_ISSET(sockfd,&rset)){
+			struct sockaddr_in clientaddr;
+			socklen_t len = sizeof(clientaddr);
+			int clientfd = accept(sockfd,(struct sockaddr*)&clientaddr,&len);
+			printf("clientfd: %d\n",clientfd);
 
+			FD_SET(clientfd,&rdfs);
+			maxfd = clientfd;
+		}
+		
+		for(int i = sockfd+1;i<=maxfd;i++){
+			if(FD_ISSET(i,&rset)){
+				char buffer[128] = {0};
+				int count = recv(i,buffer,128,0);
+				if(count == 0){
+					printf("clientfd: %d close\n",i);
+					break;
+				}
+				send(i,buffer,count,0);
+				printf("clientfd: %d ",i);
+				printf("recv data count: %d content: %s \n",count,buffer);
+				
+				}
+				
+			}
+		}
 
+	
 #endif
 
 	getchar( );
