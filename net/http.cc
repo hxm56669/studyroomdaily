@@ -1,15 +1,27 @@
+#include <stdio.h>
+#include <errno.h>
+#include <cstring>
+
+
 #include <sys/socket.h>
+#include <netinet/in.h>
+
 #include <sys/select.h>
 #include <sys/poll.h>
-#include <errno.h>
-#include <netinet/in.h>
-#include <stdio.h>
-#include <cstring>
-#include <unistd.h>
-#include <pthread.h>
 #include <sys/epoll.h>
 
-#define BUFFER_LENGTH 128
+
+
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <pthread.h>
+
+
+
+
+#define BUFFER_LENGTH 512
 
 typedef int (*RCALLBACK)(int fd);
 //listenfd  触发 EPOLLIN 时，执行accept_cb
@@ -35,6 +47,64 @@ struct conn_item
 };
 struct conn_item connlist[1024] = {0};
 int epfd =0;
+
+#define ENABLE_HTTP 1
+typedef struct conn_item connection_t;
+#if ENABLE_HTTP
+int http_request(connection_t *conn){
+	printf("http_request\n");
+	return 0;
+}
+
+int http_response(connection_t *conn) {
+#if 0
+    // 动态生成Date头
+    time_t now = time(NULL);
+    char date_str[128];
+    strftime(date_str, sizeof(date_str), "%a, %d %b %Y %H:%M:%S GMT", gmtime(&now));
+	
+    // HTML内容
+    const char *html_body = "<html><head><title>0voice.king</title></head><body><h1>King</h1></body></html>";
+    int body_len = strlen(html_body);
+
+    // 安全格式化响应
+    conn->widx = snprintf(conn->wbuffer, sizeof(conn->wbuffer),
+        "HTTP/1.1 200 OK\r\n"
+        "Accept-Ranges: bytes\r\n"
+        "Content-Length: %d\r\n"
+        "Content-Type: text/html\r\n"
+        "Date: %s\r\n\r\n"
+        "%s",
+        body_len, date_str, html_body);
+#else
+	// 先打开本地 index.html
+    int fd = open("index.html", O_RDONLY);
+    if (fd < 0) {
+        // 打不开就返回简单内容
+        conn->widx = snprintf(conn->wbuffer, sizeof(conn->wbuffer),
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: text/html\r\n\r\n"
+            "<h1>Hello</h1>");
+        return conn->widx;
+    }
+
+    // 读取 HTML 内容（最多读 80 字节，留空间给响应头）
+    char html[100];
+    int html_len = read(fd, html, sizeof(html)-1);
+    close(fd);
+    html[html_len] = 0; // 字符串结尾
+
+    // 构造完整 HTTP 响应
+    conn->widx = snprintf(conn->wbuffer, sizeof(conn->wbuffer),
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Type: text/html\r\n\r\n"
+        "%s", html);
+
+    return conn->widx;
+}
+#endif
+#endif
+
 #if 0
 struct reactor
 {
@@ -117,9 +187,12 @@ int recv_cb(int fd )
 		return -1;
 	}
 	connlist[fd].ridx += count;
-#if 1
+#if 0
 	memcpy(connlist[fd].wbuffer,buffer,connlist[fd].ridx);
-	
+	connlist[fd].widx = connlist[fd].ridx;
+#else
+	//http_rquest( );
+	http_response(&connlist[fd]);
 #endif
 	set_event(fd,EPOLLOUT,0);
 	return count;
@@ -131,8 +204,8 @@ int send_cb(int fd)
 	char *buffer = connlist[fd].wbuffer;
 	int idx = connlist[fd].widx;
 	
-	int count = send(fd,buffer+idx,connlist[fd].widx,0);
-	connlist[fd].widx = connlist[fd].ridx;
+	int count = send(fd,buffer,connlist[fd].widx,0);
+	
 	set_event(fd,EPOLLIN,0);
 	return count;
 }
