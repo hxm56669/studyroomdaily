@@ -21,7 +21,7 @@
 
 
 
-#define BUFFER_LENGTH 512
+#define BUFFER_LENGTH 128
 
 typedef int (*RCALLBACK)(int fd);
 //listenfd  触发 EPOLLIN 时，执行accept_cb
@@ -52,12 +52,13 @@ int epfd =0;
 typedef struct conn_item connection_t;
 #if ENABLE_HTTP
 int http_request(connection_t *conn){
-	printf("http_request\n");
+	//printf("http_request\n");
 	return 0;
 }
 
-int http_response(connection_t *conn) {
-#if 0
+int http_response(connection_t *conn) 
+{
+#if 1
     // 动态生成Date头
     time_t now = time(NULL);
     char date_str[128];
@@ -76,6 +77,7 @@ int http_response(connection_t *conn) {
         "Date: %s\r\n\r\n"
         "%s",
         body_len, date_str, html_body);
+		return conn->widx;
 #else
 	// 先打开本地 index.html
     int fd = open("index.html", O_RDONLY);
@@ -101,8 +103,9 @@ int http_response(connection_t *conn) {
         "%s", html);
 
     return conn->widx;
-}
 #endif
+}
+
 #endif
 
 #if 0
@@ -123,7 +126,7 @@ void* client_thread(void* arg)
 		break;
 	}
 	send(clientfd,buffer,count,0);
-	printf("recv data form clientfd:%d ; count: %d ; content: %s\n",clientfd,count,buffer);
+	//printf("recv data form clientfd:%d ; count: %d ; content: %s\n",clientfd,count,buffer);
 	}
 	close(clientfd);
 	return NULL;
@@ -181,7 +184,7 @@ int recv_cb(int fd )
 	
 	if(count <= 0)
 	{
-		printf("clientfd: %d close\n",fd);
+		//printf("clientfd: %d close\n",fd);
 		epoll_ctl(epfd,EPOLL_CTL_DEL,fd,NULL);
 		close(fd);
 		return -1;
@@ -205,7 +208,8 @@ int send_cb(int fd)
 	int idx = connlist[fd].widx;
 	
 	int count = send(fd,buffer,connlist[fd].widx,0);
-	
+	connlist[fd].ridx = 0;
+    connlist[fd].widx = 0;
 	set_event(fd,EPOLLIN,0);
 	return count;
 }
@@ -252,12 +256,12 @@ int main( )
 			if(events[i].events & EPOLLIN)
 			{
 				int count = connlist[connfd].recv_t.recv_callback(connfd);
-				printf("recv<--clientfd: %d, count: %d, buffer: %s \n",connfd,count,connlist[connfd].rbuffer);
+				//printf("recv<--clientfd: %d, count: %d, buffer: %s \n",connfd,count,connlist[connfd].rbuffer);
 			}
 			else if(events[i].events & EPOLLOUT)
 			{
 				int count = connlist[connfd].send_callback(connfd);
-				printf("send-->clientfd: %d, count: %d, buffer: %s \n",connfd,count,connlist[connfd].wbuffer);
+				//printf("send-->clientfd: %d, count: %d, buffer: %s \n",connfd,count,connlist[connfd].wbuffer);
 			}
 		}
 	}
