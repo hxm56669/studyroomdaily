@@ -9,7 +9,7 @@
     typedef struct thread_pool_s thread_pool_t;
     typedef void (*handler_pt)(void *arg);
 
-    #ifndef __cplusplus
+    #ifdef __cplusplus
     extern "C" 
     {
     #endif
@@ -22,7 +22,7 @@
         
         void thread_pool_waitdone(thread_pool_t *pool);
        
-    #ifndef __cplusplus 
+    #ifdef __cplusplus 
     {
     #endif
 #endif
