@@ -150,3 +150,54 @@ __taskqueue_destroy(task_queue_t* queue)
     pthread_cond_destroy(&queue->cond);
     free(queue);
 }
+
+static void *
+__thread_pool_work(void* arg)
+{
+    thread_pool_t* pool = (thread_pool_t*)arg;
+    task_t* task;
+    void* ctx;
+
+    while(atomic_load(&pool->quit) == 0)
+    {
+        task = (task_t*)__get_task(pool->task_queue);
+        if(!task) break;
+        handler_pt func = task->func;
+        ctx = task->arg;
+        free(task);
+        func(ctx);
+
+    }
+    return NULL;
+}
+
+static void 
+__thread_pool_terminate(thread_pool_t *pool)
+{
+    atomic_store(&pool->quit, 1);
+    __nonblock(pool->task_queue);
+    for(int i = 0; i < pool->thread_count; i++)
+    {
+        pthread_join(pool->threads[i], NULL);
+    }
+    __taskqueue_destroy(pool->task_queue);
+    free(pool->threads);
+    free(pool);
+}
+
+static int 
+__threads_create(thread_pool_t* pool, int thread_count)
+{
+    pthread_attr_t attr;
+    int ret;
+    ret = pthread_attr_init(&attr);
+}
+ int thread_pool_post(thread_pool_t *pool, handler_pt handler, void *arg)
+ {
+
+ }
+        
+void thread_pool_waitdone(thread_pool_t *pool)
+{
+
+}
