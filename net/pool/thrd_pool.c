@@ -82,24 +82,59 @@ __nonblock(task_queue_t* queue)
 static inline void
 __add_task(task_queue_t* queue, task_t* task)
 {
-    void **link = (void**)task;
-    *link = NULL;
-    *queue->tail = task;  /*先取成员，再解引用: *queue->tail = queue->tail->next  ;
+    void **link = (void**)task;  //二维指针的作用：不限定任务的类型，只要任务的结构起始内存是一个用于连接下一个任务的指针
+    *link = NULL; //把新加任务的next指针赋值为NULL
+
+    spinlock_lock(&queue->lock);
+    *queue->tail = task;  //将当前队列最后一个节点的next指针，指向的新加任务
+                          /*先取成员，再解引用: *queue->tail = queue->tail->next  ;
                         c语言中void*，可以用来被任意类型指针指向*，所以这里void* = void**（隐式类型转换）
                         又因为link和task指向的对象的初始地址相同，只是解释方式不同，所以不管这里用
                         task还是link都是对的 */
-     queue->tail = link;
+     queue->tail = link;//更新当前队列的tail指针，指向新任务的next指针
+     spinlock_unlock(&queue->lock);
+     pthread_cond_signal(&queue->cond);
 }
 static inline void *
 __pop_task(task_queue_t* queue)
 {
-
+    spinlock_lock(&queue->lock);
+    if (queue->head ==NULL)
+    {
+        spinlock_unlock(&queue->lock);
+        return NULL;
+    }
+    task_t* task = (task_t*)queue->head;
+    void** link = (void**)task; //link的值是task的next指针的地址
+    queue->head = *link;        //*link是task的next指针的值
+    if(queue->head == NULL)
+    {
+        queue->tail = &queue->head;
+    }
+    spinlock_unlock(&queue->lock);
+    return task;
 }
 
 static inline void*
 __get_task(task_queue_t* queue)
 {
-
+    task_t* task;
+    //虚假唤醒：当生产者线程唤醒消费者线程时，消费者线程可能没有任务可执行，需要继续等待眠
+    while((task = __pop_task(queue)) == NULL)
+    {
+       pthread_mutex_lock(&queue->mutex);
+       if(queue->block == 0)
+       {
+         pthread_mutex_unlock(&queue->mutex);   
+         return NULL;   
+       }
+       //先解锁，再休眠，等待生产者线程条件变量唤醒，再加锁
+       pthread_cond_wait(&queue->cond, &queue->mutex);
+       pthread_mutex_unlock(&queue->mutex);
+    }
+    
+    spinlock_unlock(&queue->lock);
+    return task;
 }
 
 static void 
@@ -114,4 +149,55 @@ __taskqueue_destroy(task_queue_t* queue)
     pthread_mutex_destroy(&queue->mutex);
     pthread_cond_destroy(&queue->cond);
     free(queue);
+}
+
+static void *
+__thread_pool_work(void* arg)
+{
+    thread_pool_t* pool = (thread_pool_t*)arg;
+    task_t* task;
+    void* ctx;
+
+    while(atomic_load(&pool->quit) == 0)
+    {
+        task = (task_t*)__get_task(pool->task_queue);
+        if(!task) break;
+        handler_pt func = task->func;
+        ctx = task->arg;
+        free(task);
+        func(ctx);
+
+    }
+    return NULL;
+}
+
+static void 
+__thread_pool_terminate(thread_pool_t *pool)
+{
+    atomic_store(&pool->quit, 1);
+    __nonblock(pool->task_queue);
+    for(int i = 0; i < pool->thread_count; i++)
+    {
+        pthread_join(pool->threads[i], NULL);
+    }
+    __taskqueue_destroy(pool->task_queue);
+    free(pool->threads);
+    free(pool);
+}
+
+static int 
+__threads_create(thread_pool_t* pool, int thread_count)
+{
+    pthread_attr_t attr;
+    int ret;
+    ret = pthread_attr_init(&attr);
+}
+ int thread_pool_post(thread_pool_t *pool, handler_pt handler, void *arg)
+ {
+
+ }
+        
+void thread_pool_waitdone(thread_pool_t *pool)
+{
+
 }
